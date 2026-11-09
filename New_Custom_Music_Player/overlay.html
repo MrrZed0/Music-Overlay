@@ -1,0 +1,1134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multi-Platform Stream Music Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&family=Orbitron:wght@600;800;900&family=Outfit:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: rgba(13, 15, 22, 0.88);
+    --bg-secondary: rgba(25, 28, 42, 0.95);
+    --accent: #00f2fe;
+    --accent-2: #4facfe;
+    --text-main: #ffffff;
+    --text-sub: #a0aec0;
+    --border-radius: 18px;
+    --border-width: 2px;
+    --border-color: rgba(255, 255, 255, 0.14);
+    --font-family: 'Outfit', sans-serif;
+    --player-width: 520px;
+    --player-height: 140px;
+    --art-size: 104px;
+    --art-radius: 14px;
+    --shadow-strength: 0.6;
+    --glass-blur: 16px;
+    --anim-duration: 750ms;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+  }
+
+  body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-family);
+    perspective: 1200px;
+  }
+
+  /* Wrapper handles the 100+ In/Out Visibility Effects */
+  #player-stage {
+    position: relative;
+    width: var(--player-width);
+    height: var(--player-height);
+    transform-style: preserve-3d;
+    will-change: transform, opacity, filter, clip-path;
+  }
+
+  #player-stage.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Main Player Card */
+  #music-player {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, var(--bg-primary), var(--bg-secondary));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border-radius: var(--border-radius);
+    border: var(--border-width) solid var(--border-color);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, var(--shadow-strength)),
+                0 0 24px color-mix(in srgb, var(--accent) 28%, transparent);
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    gap: 18px;
+    overflow: hidden;
+    transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+  }
+
+  /* Ambient Blurred Artwork Background inside Player */
+  #bg-art-blur {
+    position: absolute;
+    inset: -30%;
+    background-size: cover;
+    background-position: center;
+    filter: blur(32px) brightness(0.38) saturate(1.6);
+    opacity: 0.55;
+    z-index: 0;
+    transition: background-image 0.5s ease, opacity 0.4s ease;
+    pointer-events: none;
+  }
+
+  /* Theme Variations */
+  #music-player[data-theme="cyberpunk"] {
+    clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 22px 100%, 0 calc(100% - 22px));
+    border-radius: 0;
+    border-left: 5px solid var(--accent);
+    border-right: 2px solid var(--accent-2);
+  }
+
+  #music-player[data-theme="pill"] {
+    border-radius: 999px;
+    padding: 12px 26px 12px 14px;
+  }
+  #music-player[data-theme="pill"] .art-wrap {
+    border-radius: 50%;
+  }
+
+  #music-player[data-theme="vinyl"] .art-wrap {
+    border-radius: 50%;
+    animation: vinylSpin 9s linear infinite;
+    border: 3px solid var(--accent);
+  }
+  #music-player[data-theme="vinyl"] .art-wrap::after {
+    content: '';
+    position: absolute;
+    width: 22%;
+    height: 22%;
+    background: #111;
+    border: 3px solid var(--accent);
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  #music-player[data-theme="minimal"] {
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: 4px solid var(--accent);
+    border-radius: 10px;
+  }
+
+  @keyframes vinylSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Album Art Container */
+  .art-wrap {
+    position: relative;
+    z-index: 2;
+    width: var(--art-size);
+    height: var(--art-size);
+    min-width: var(--art-size);
+    border-radius: var(--art-radius);
+    overflow: hidden;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: #161925;
+  }
+
+  .art-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Platform Badge */
+  .platform-badge {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    z-index: 3;
+    background: rgba(10, 12, 18, 0.88);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 800;
+    padding: 2px 6px;
+    border-radius: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    backdrop-filter: blur(6px);
+  }
+
+  /* Track Metadata & Progress */
+  .info-col {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+  }
+
+  .top-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .now-playing-tag {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .eq-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 11px;
+  }
+  .eq-bars span {
+    width: 2.5px;
+    background: var(--accent);
+    border-radius: 2px;
+    animation: eqBounce 0.8s ease-in-out infinite alternate;
+  }
+  .eq-bars span:nth-child(2) { animation-delay: 0.2s; }
+  .eq-bars span:nth-child(3) { animation-delay: 0.4s; }
+  .eq-bars span:nth-child(4) { animation-delay: 0.15s; }
+
+  @keyframes eqBounce {
+    0% { height: 3px; }
+    100% { height: 11px; }
+  }
+
+  .song-title-wrap {
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  #song-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.2;
+    display: inline-block;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  }
+
+  #song-artist {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-sub);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Progress Bar */
+  .progress-wrap {
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .progress-track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 99px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-radius: 99px;
+    box-shadow: 0 0 12px var(--accent);
+    transition: width 0.35s linear;
+  }
+
+  .time-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-sub);
+    opacity: 0.85;
+  }
+
+  /* ==========================================================================
+     10-SECOND TRACK CHANGE TAKEOVER / SPLASH OVERLAY (Covers the Player)
+     ========================================================================== */
+  #splash-takeover {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0b0d14;
+    border: var(--border-width) solid var(--accent);
+    box-shadow: 0 0 35px color-mix(in srgb, var(--accent) 55%, transparent);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform-style: preserve-3d;
+    will-change: transform, opacity, filter, clip-path;
+  }
+
+  #splash-takeover.active {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  /* Full-bleed background artwork inside the 10s Takeover */
+  #splash-bg {
+    position: absolute;
+    inset: -15%;
+    background-size: cover;
+    background-position: center;
+    filter: blur(14px) brightness(0.35) saturate(1.8);
+    transform: scale(1.1);
+    animation: splashBgPan 10s ease-in-out infinite alternate;
+  }
+
+  @keyframes splashBgPan {
+    0% { transform: scale(1.08) translate(-2%, -2%); }
+    100% { transform: scale(1.22) translate(2%, 2%); }
+  }
+
+  /* Splash Inner Content Layout */
+  .splash-content {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    padding: 14px 22px;
+    gap: 18px;
+    background: radial-gradient(circle at center, transparent 10%, rgba(5, 7, 12, 0.72) 100%);
+  }
+
+  .splash-art-box {
+    width: calc(var(--art-size) + 10px);
+    height: calc(var(--art-size) + 10px);
+    min-width: calc(var(--art-size) + 10px);
+    border-radius: var(--art-radius);
+    overflow: hidden;
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 25px color-mix(in srgb, var(--accent) 65%, transparent);
+    position: relative;
+  }
+
+  .splash-art-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .splash-text-box {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .splash-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    color: #05070c;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 99px;
+    margin-bottom: 2px;
+  }
+
+  #splash-title {
+    font-size: 23px;
+    font-weight: 900;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 3px 14px rgba(0, 0, 0, 0.85);
+  }
+
+  #splash-artist {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+  }
+
+  /* 10-Second Countdown Bar at bottom of Splash Takeover */
+  #splash-timer-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 4px;
+    width: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transform-origin: left center;
+    z-index: 5;
+  }
+</style>
+</head>
+<body>
+
+  <div id="player-stage" class="is-hidden">
+    <!-- Main Music Player -->
+    <div id="music-player" data-theme="glass">
+      <div id="bg-art-blur"></div>
+
+      <div class="art-wrap">
+        <img id="album-art" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><rect width='100%' height='100%' fill='%23181c2a'/><text x='50%' y='54%' font-size='64' text-anchor='middle' fill='%2300f2fe' font-family='sans-serif'>♪</text></svg>" alt="Album Art" />
+        <span id="platform-badge" class="platform-badge">YTM</span>
+      </div>
+
+      <div class="info-col">
+        <div class="top-row">
+          <div class="now-playing-tag">
+            <div class="eq-bars"><span></span><span></span><span></span><span></span></div>
+            <span id="status-label">NOW PLAYING</span>
+          </div>
+        </div>
+
+        <div class="song-title-wrap">
+          <div id="song-title">Waiting for track...</div>
+        </div>
+        <div id="song-artist">Play a song on YouTube Music, Spotify, or Amazon Music</div>
+
+        <div class="progress-wrap" id="progress-container">
+          <div class="progress-track">
+            <div id="progress-fill"></div>
+          </div>
+          <div class="time-row">
+            <span id="time-elapsed">0:00</span>
+            <span id="time-total">0:00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 10-Second Song-Change Splash Takeover Layer -->
+      <div id="splash-takeover">
+        <div id="splash-bg"></div>
+        <div class="splash-content">
+          <div class="splash-art-box">
+            <img id="splash-art" src="" alt="Track Art" />
+          </div>
+          <div class="splash-text-box">
+            <div class="splash-badge" id="splash-badge">NEW TRACK</div>
+            <div id="splash-title">Song Title</div>
+            <div id="splash-artist">Artist Name</div>
+          </div>
+        </div>
+        <div id="splash-timer-bar"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ============================================================================
+   1. PROCEDURAL 108+ IN/OUT VISIBILITY & 108+ SPLASH TAKEOVER EFFECT ENGINE
+   ============================================================================ */
+const EFFECT_FAMILIES = [
+  "Slide", "Flip3D", "Elastic", "Zoom", "Glitch", "Rotate",
+  "SkewWhip", "Origami", "BlurFocus", "PortalClip", "CyberNeon", "GravityDrop"
+];
+const EFFECT_VARIANTS = [
+  "Left", "Right", "Up", "Down", "TopLeft", "TopRight", "BottomLeft", "BottomRight", "CenterPulse"
+];
+
+// Generates 108 distinct named effects (12 families x 9 directional/physics variants)
+const EFFECTS_CATALOG = [];
+EFFECT_FAMILIES.forEach((fam, fIdx) => {
+  EFFECT_VARIANTS.forEach((variant, vIdx) => {
+    const id = `${fam}_${variant}`;
+    EFFECTS_CATALOG.push({
+      id,
+      index: fIdx * 9 + vIdx + 1,
+      name: `${fIdx * 9 + vIdx + 1}. ${fam} — ${variant}`,
+      family: fam,
+      variant: variant
+    });
+  });
+});
+
+// Compute Web Animations API keyframes for any of the 108 effects
+function buildEffectKeyframes(effectId, mode = "in") {
+  if (effectId === "random") {
+    const pick = EFFECTS_CATALOG[Math.floor(Math.random() * EFFECTS_CATALOG.length)];
+    effectId = pick.id;
+  }
+  const [family, variant] = (effectId || "Slide_Up").split("_");
+
+  // Directional offsets
+  const dirMap = {
+    Left:        { x: -130, y: 0,   rx: 0,   ry: -85, rz: -18 },
+    Right:       { x: 130,  y: 0,   rx: 0,   ry: 85,  rz: 18  },
+    Up:          { x: 0,    y: -110,rx: 85,  ry: 0,   rz: -12 },
+    Down:        { x: 0,    y: 110, rx: -85, ry: 0,   rz: 12  },
+    TopLeft:     { x: -110, y: -90, rx: 65,  ry: -65, rz: -25 },
+    TopRight:    { x: 110,  y: -90, rx: 65,  ry: 65,  rz: 25  },
+    BottomLeft:  { x: -110, y: 90,  rx: -65, ry: -65, rz: 25  },
+    BottomRight: { x: 110,  y: 90,  rx: -65, ry: 65,  rz: -25 },
+    CenterPulse: { x: 0,    y: 0,   rx: 90,  ry: 90,  rz: 180 }
+  };
+  const d = dirMap[variant] || dirMap.Up;
+
+  let startFrame = {};
+  let midFrame = null;
+  let endFrame = {
+    transform: "translate3d(0px, 0px, 0px) scale(1) rotateX(0deg) rotateY(0deg) rotateZ(0deg) skew(0deg, 0deg)",
+    opacity: 1,
+    filter: "blur(0px) brightness(1) hue-rotate(0deg)"
+  };
+
+  switch (family) {
+    case "Slide":
+      startFrame = {
+        transform: `translate3d(${d.x}%, ${d.y}%, 0px) scale(0.92)`,
+        opacity: 0,
+        filter: "blur(6px) brightness(1) hue-rotate(0deg)"
+      };
+      break;
+
+    case "Flip3D":
+      startFrame = {
+        transform: `perspective(1000px) translate3d(${d.x * 0.3}px, ${d.y * 0.3}px, -180px) rotateX(${d.rx}deg) rotateY(${d.ry}deg)`,
+        opacity: 0,
+        filter: "blur(4px) brightness(1.4) hue-rotate(0deg)"
+      };
+      break;
+
+    case "Elastic":
+      startFrame = {
+        transform: `translate3d(${d.x * 0.8}%, ${d.y * 0.8}%, 0px) scale(0.35)`,
+        opacity: 0,
+        filter: "blur(4px) brightness(1) hue-rotate(0deg)"
+      };
+      midFrame = {
+        transform: `translate3d(${d.x * -0.08}%, ${d.y * -0.08}%, 0px) scale(1.09)`,
+        opacity: 1,
+        filter: "blur(0px) brightness(1.15) hue-rotate(0deg)",
+        offset: 0.72
+      };
+      break;
+
+    case "Zoom":
+      const zScale = variant === "CenterPulse" ? 2.1 : 0.15;
+      startFrame = {
+        transform: `translate3d(${d.x * 0.45}%, ${d.y * 0.45}%, 0px) scale(${zScale})`,
+        opacity: 0,
+        filter: "blur(14px) brightness(1.5) hue-rotate(0deg)"
+      };
+      break;
+
+    case "Glitch":
+      startFrame = {
+        transform: `translate3d(${d.x * 0.4}px, ${d.y * 0.4}px, 0px) skew(${d.rz * 2}deg, ${d.rz}deg) scale(1.12)`,
+        opacity: 0,
+        filter: "blur(2px) brightness(2.4) hue-rotate(160deg)"
+      };
+      midFrame = {
+        transform: `translate3d(${-d.x * 0.15}px, ${d.y * 0.15}px, 0px) skew(${-d.rz}deg, 0deg) scale(0.97)`,
+        opacity: 0.85,
+        filter: "blur(0px) brightness(1.7) hue-rotate(-90deg)",
+        offset: 0.55
+      };
+      break;
+
+    case "Rotate":
+      startFrame = {
+        transform: `translate3d(${d.x * 0.5}%, ${d.y * 0.5}%, 0px) rotateZ(${d.rz * 4}deg) scale(0.25)`,
+        opacity: 0,
+        filter: "blur(8px) brightness(1.2) hue-rotate(0deg)"
+      };
+      break;
+
+    case "SkewWhip":
+      startFrame = {
+        transform: `translate3d(${d.x * 1.1}%, ${d.y * 0.6}%, 0px) skew(${d.rz * 2.4}deg, ${d.rz * 0.8}deg) scale(0.8)`,
+        opacity: 0,
+        filter: "blur(10px) brightness(1.3) hue-rotate(0deg)"
+      };
+      midFrame = {
+        transform: `translate3d(0%, 0%, 0px) skew(${-d.rz * 0.5}deg, 0deg) scale(1.03)`,
+        opacity: 1,
+        filter: "blur(0px) brightness(1.05) hue-rotate(0deg)",
+        offset: 0.75
+      };
+      break;
+
+    case "Origami":
+      startFrame = {
+        transform: `perspective(900px) rotateX(${d.rx * 1.1}deg) rotateY(${d.ry * 0.8}deg) scaleY(0.05) scaleX(0.6)`,
+        opacity: 0,
+        filter: "blur(3px) brightness(1.8) hue-rotate(0deg)"
+      };
+      break;
+
+    case "BlurFocus":
+      startFrame = {
+        transform: `translate3d(${d.x * 0.25}%, ${d.y * 0.25}%, 0px) scale(1.35)`,
+        opacity: 0,
+        filter: "blur(36px) brightness(2.2) hue-rotate(45deg)"
+      };
+      break;
+
+    case "PortalClip":
+      startFrame = {
+        transform: `translate3d(${d.x * 0.2}%, ${d.y * 0.2}%, 0px) scaleX(0.02) scaleY(1.4)`,
+        opacity: 0,
+        filter: "blur(6px) brightness(2.5) hue-rotate(90deg)"
+      };
+      midFrame = {
+        transform: `translate3d(0%, 0%, 0px) scaleX(1.06) scaleY(0.95)`,
+        opacity: 1,
+        filter: "blur(0px) brightness(1.3) hue-rotate(20deg)",
+        offset: 0.68
+      };
+      break;
+
+    case "CyberNeon":
+      startFrame = {
+        transform: `translate3d(${d.x * 0.6}%, ${d.y * 0.6}%, 0px) scale(0.85)`,
+        opacity: 0,
+        filter: "blur(12px) brightness(3.0) hue-rotate(180deg)"
+      };
+      midFrame = {
+        transform: `translate3d(0%, 0%, 0px) scale(1.04)`,
+        opacity: 1,
+        filter: "blur(1px) brightness(2.0) hue-rotate(60deg)",
+        offset: 0.6
+      };
+      break;
+
+    case "GravityDrop":
+    default:
+      startFrame = {
+        transform: `translate3d(${d.x * 0.4}%, ${d.y - 120}%, 0px) rotateZ(${d.rz}deg) scale(1.15)`,
+        opacity: 0,
+        filter: "blur(8px) brightness(1.2) hue-rotate(0deg)"
+      };
+      midFrame = {
+        transform: `translate3d(0%, 8%, 0px) rotateZ(${-d.rz * 0.2}deg) scale(0.96, 1.05)`,
+        opacity: 1,
+        filter: "blur(0px) brightness(1) hue-rotate(0deg)",
+        offset: 0.72
+      };
+      break;
+  }
+
+  const frames = midFrame ? [startFrame, midFrame, endFrame] : [startFrame, endFrame];
+  if (mode === "out") {
+    return frames.slice().reverse().map(f => {
+      const copy = { ...f };
+      if (copy.offset !== undefined) copy.offset = 1 - copy.offset;
+      return copy;
+    });
+  }
+  return frames;
+}
+
+/* ============================================================================
+   2. DEFAULT CONFIGURATION & SYNC ENGINE (LocalStorage + BroadcastChannel + URL)
+   ============================================================================ */
+const DEFAULT_CONFIG = {
+  ytmUrl: "http://127.0.0.1:26538/api/v1/song",
+  smtcUrl: "http://127.0.0.1:5000/now-playing",
+  sourcePriority: "auto", // "auto", "ytm", "smtc"
+  pollIntervalMs: 1000,
+  hideDelaySec: 10,
+  splashDurationSec: 10,
+  enableSplash: true,
+  inEffect: "Elastic_Up",
+  outEffect: "Slide_Down",
+  splashInEffect: "CyberNeon_CenterPulse",
+  splashOutEffect: "BlurFocus_CenterPulse",
+  blockedExes: ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "discord.exe", "obs64.exe"],
+  theme: "glass",
+  accent: "#00f2fe",
+  accent2: "#4facfe",
+  bgPrimary: "rgba(13, 15, 22, 0.88)",
+  bgSecondary: "rgba(25, 28, 42, 0.95)",
+  textMain: "#ffffff",
+  textSub: "#a0aec0",
+  fontFamily: "'Outfit', sans-serif",
+  playerWidth: 520,
+  playerHeight: 140,
+  artSize: 104,
+  borderRadius: 18,
+  animDuration: 750,
+  showProgress: true,
+  streamerBotWsUrl: "ws://127.0.0.1:8080/",
+  streamerBotActionName: "AnnounceTrackChange",
+  enableStreamerBotTrigger: true
+};
+
+let config = { ...DEFAULT_CONFIG };
+
+function loadConfig() {
+  // 1. Check LocalStorage
+  try {
+    const saved = localStorage.getItem("zed_music_overlay_config");
+    if (saved) {
+      config = { ...config, ...JSON.parse(saved) };
+    }
+  } catch (e) {}
+
+  // 2. Check URL Query Parameter (?cfg=base64) for OBS Browser Source portability
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("cfg")) {
+      const decoded = JSON.parse(atob(params.get("cfg")));
+      config = { ...config, ...decoded };
+    }
+  } catch (e) {}
+
+  applyVisualConfig();
+}
+
+function applyVisualConfig() {
+  const root = document.documentElement.style;
+  root.setProperty("--accent", config.accent);
+  root.setProperty("--accent-2", config.accent2);
+  root.setProperty("--bg-primary", config.bgPrimary);
+  root.setProperty("--bg-secondary", config.bgSecondary);
+  root.setProperty("--text-main", config.textMain);
+  root.setProperty("--text-sub", config.textSub);
+  root.setProperty("--font-family", config.fontFamily);
+  root.setProperty("--player-width", `${config.playerWidth}px`);
+  root.setProperty("--player-height", `${config.playerHeight}px`);
+  root.setProperty("--art-size", `${config.artSize}px`);
+  root.setProperty("--border-radius", `${config.borderRadius}px`);
+  root.setProperty("--anim-duration", `${config.animDuration}ms`);
+
+  const playerEl = document.getElementById("music-player");
+  playerEl.setAttribute("data-theme", config.theme);
+
+  const progEl = document.getElementById("progress-container");
+  progEl.style.display = config.showProgress ? "flex" : "none";
+}
+
+// Listen for real-time updates from customizer.html
+const bc = new BroadcastChannel("zed_music_overlay_channel");
+bc.onmessage = (ev) => {
+  if (!ev.data) return;
+  if (ev.data.type === "CONFIG_UPDATE") {
+    config = { ...config, ...ev.data.config };
+    applyVisualConfig();
+  } else if (ev.data.type === "TEST_IN_EFFECT") {
+    playStageVisibility(true, ev.data.effectId || config.inEffect);
+  } else if (ev.data.type === "TEST_OUT_EFFECT") {
+    playStageVisibility(false, ev.data.effectId || config.outEffect);
+  } else if (ev.data.type === "TEST_SPLASH_EFFECT") {
+    triggerSplashTakeover({
+      title: currentTrack.title || "Midnight City (Cyber Remix)",
+      artist: currentTrack.artist || "M83 • Stream Overlay Preview",
+      art: currentTrack.art || document.getElementById("album-art").src,
+      platform: currentTrack.platform || "SPOTIFY"
+    }, ev.data.effectId || config.splashInEffect);
+  } else if (ev.data.type === "SIMULATE_TRACK") {
+    handleIncomingTrack(ev.data.track);
+  }
+};
+
+window.addEventListener("storage", (e) => {
+  if (e.key === "zed_music_overlay_config" && e.newValue) {
+    try {
+      config = { ...config, ...JSON.parse(e.newValue) };
+      applyVisualConfig();
+    } catch (err) {}
+  }
+});
+
+/* ============================================================================
+   3. VISIBILITY STATE, 10s AUTO-HIDE & 10s TRACK-CHANGE SPLASH CONTROLLER
+   ============================================================================ */
+let isPlayerVisible = false;
+let stageAnim = null;
+let splashAnim = null;
+let splashTimeout = null;
+let lastPlayingTimestamp = 0;
+let currentTrack = {
+  id: "",
+  title: "",
+  artist: "",
+  album: "",
+  art: "",
+  elapsed: 0,
+  duration: 0,
+  isPlaying: false,
+  platform: "",
+  url: ""
+};
+
+function playStageVisibility(show, overrideEffectId = null) {
+  const stage = document.getElementById("player-stage");
+  const effectId = overrideEffectId || (show ? config.inEffect : config.outEffect);
+  const keyframes = buildEffectKeyframes(effectId, show ? "in" : "out");
+
+  if (stageAnim) stageAnim.cancel();
+
+  if (show) {
+    stage.classList.remove("is-hidden");
+    isPlayerVisible = true;
+  }
+
+  stageAnim = stage.animate(keyframes, {
+    duration: Number(config.animDuration) || 750,
+    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+    fill: "forwards"
+  });
+
+  stageAnim.onfinish = () => {
+    if (!show) {
+      stage.classList.add("is-hidden");
+      isPlayerVisible = false;
+    }
+  };
+}
+
+function triggerSplashTakeover(track, overrideInEffect = null) {
+  if (!config.enableSplash && !overrideInEffect) return;
+
+  const splash = document.getElementById("splash-takeover");
+  const timerBar = document.getElementById("splash-timer-bar");
+  const durationMs = (Number(config.splashDurationSec) || 10) * 1000;
+
+  document.getElementById("splash-title").textContent = track.title || "Unknown Title";
+  document.getElementById("splash-artist").textContent = track.artist || "Unknown Artist";
+  document.getElementById("splash-badge").textContent = `${track.platform || "NOW PLAYING"} • NEW TRACK`;
+  if (track.art) {
+    document.getElementById("splash-art").src = track.art;
+    document.getElementById("splash-bg").style.backgroundImage = `url("${track.art}")`;
+  }
+
+  if (splashTimeout) clearTimeout(splashTimeout);
+  if (splashAnim) splashAnim.cancel();
+
+  splash.classList.add("active");
+
+  const inFrames = buildEffectKeyframes(overrideInEffect || config.splashInEffect, "in");
+  splashAnim = splash.animate(inFrames, {
+    duration: Number(config.animDuration) || 750,
+    easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+    fill: "forwards"
+  });
+
+  // Animate 10-second countdown bar
+  timerBar.animate(
+    [{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }],
+    { duration: durationMs, easing: "linear", fill: "forwards" }
+  );
+
+  // Hide splash after 10 seconds to reveal the main music player underneath
+  splashTimeout = setTimeout(() => {
+    const outFrames = buildEffectKeyframes(config.splashOutEffect, "out");
+    splashAnim = splash.animate(outFrames, {
+      duration: Number(config.animDuration) || 700,
+      easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+      fill: "forwards"
+    });
+    splashAnim.onfinish = () => {
+      splash.classList.remove("active");
+    };
+  }, durationMs);
+}
+
+/* ============================================================================
+   4. DUAL-API POLLING: CodeMathis/youtube-music (:26538) + smtc-bridge (:5000)
+   ============================================================================ */
+function isAppBlocked(sourceAppId) {
+  if (!sourceAppId) return false;
+  const lower = sourceAppId.toLowerCase();
+  return (config.blockedExes || []).some(blocked => {
+    const clean = blocked.trim().toLowerCase();
+    return clean && lower.includes(clean.replace(/\.exe$/i, ""));
+  });
+}
+
+function detectPlatformInfo(sourceAppId) {
+  const s = (sourceAppId || "").toLowerCase();
+  if (s.includes("spotify")) return { label: "SPOTIFY", name: "Spotify" };
+  if (s.includes("amazon")) return { label: "AMAZON", name: "Amazon Music" };
+  if (s.includes("apple") || s.includes("itunes")) return { label: "APPLE", name: "Apple Music" };
+  if (s.includes("tidal")) return { label: "TIDAL", name: "Tidal" };
+  if (s.includes("soundcloud")) return { label: "SC", name: "SoundCloud" };
+  if (s.includes("deezer")) return { label: "DEEZER", name: "Deezer" };
+  if (s.includes("youtube")) return { label: "YTM", name: "YouTube Music" };
+  return { label: "MUSIC", name: sourceAppId || "Media Player" };
+}
+
+function buildPlatformSongUrl(platformName, title, artist, directUrl, videoId) {
+  if (directUrl && directUrl.startsWith("http")) return directUrl;
+  if (videoId) return `https://music.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+
+  const query = encodeURIComponent(`${artist} ${title}`.trim());
+  const p = (platformName || "").toLowerCase();
+  if (p.includes("spotify")) return `https://open.spotify.com/search/${query}`;
+  if (p.includes("amazon")) return `https://music.amazon.com/search/${query}`;
+  if (p.includes("apple")) return `https://music.apple.com/us/search?term=${query}`;
+  if (p.includes("tidal")) return `https://listen.tidal.com/search?q=${query}`;
+  if (p.includes("soundcloud")) return `https://soundcloud.com/search?q=${query}`;
+  return `https://music.youtube.com/search?q=${query}`;
+}
+
+async function fetchYouTubeMusicApi() {
+  try {
+    let res = await fetch(config.ytmUrl, { cache: "no-store" });
+    if (res.status === 404 && config.ytmUrl.endsWith("/song")) {
+      res = await fetch(config.ytmUrl.replace(/\/song$/, "/song-info"), { cache: "no-store" });
+    }
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !data.title) return null;
+
+    const isPlaying = data.isPaused === false;
+    const songUrl = buildPlatformSongUrl("YouTube Music", data.title, data.artist, data.url, data.videoId);
+
+    return {
+      id: `YTM::${data.videoId || data.title}::${data.artist}`,
+      title: data.title,
+      artist: data.artist || "Unknown Artist",
+      album: data.album || "",
+      art: data.imageSrc || "",
+      elapsed: Number(data.elapsedSeconds) || 0,
+      duration: Number(data.songDuration) || 0,
+      isPlaying,
+      platform: "YTM",
+      platformFull: "YouTube Music",
+      url: songUrl
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function fetchSmtcBridgeApi() {
+  try {
+    const res = await fetch(config.smtcUrl, { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || !Array.isArray(data.sessions) || data.sessions.length === 0) return null;
+
+    // Filter out blocked executables (e.g., chrome.exe, msedge.exe, discord.exe)
+    const allowedSessions = data.sessions.filter(sess => !isAppBlocked(sess.source_app_id));
+    if (allowedSessions.length === 0) return null;
+
+    // Prefer an actively playing session (PlaybackStatus === 4), or current_session_id
+    let activeSession = allowedSessions.find(s => s.playback_info && s.playback_info.PlaybackStatus === 4);
+    if (!activeSession && data.current_session_id) {
+      activeSession = allowedSessions.find(s => s.source_app_id === data.current_session_id);
+    }
+    if (!activeSession) activeSession = allowedSessions[0];
+
+    const media = activeSession.media_properties || {};
+    const playback = activeSession.playback_info || {};
+    const timeline = activeSession.timeline_properties || {};
+
+    if (!media.Title) return null;
+
+    let thumb = media.Thumbnail || "";
+    if (thumb && !thumb.startsWith("data:") && !thumb.startsWith("http")) {
+      thumb = `data:image/png;base64,${thumb}`;
+    }
+
+    const pInfo = detectPlatformInfo(activeSession.source_app_id);
+    const isPlaying = playback.PlaybackStatus === 4;
+    const elapsedSec = timeline.Position ? Math.floor(timeline.Position / 1000) : 0;
+    const durationSec = timeline.EndTime ? Math.floor(timeline.EndTime / 1000) : 0;
+    const songUrl = buildPlatformSongUrl(pInfo.name, media.Title, media.Artist, null, null);
+
+    return {
+      id: `${pInfo.label}::${media.Title}::${media.Artist}`,
+      title: media.Title,
+      artist: media.Artist || media.AlbumArtist || "Unknown Artist",
+      album: media.AlbumTitle || "",
+      art: thumb,
+      elapsed: elapsedSec,
+      duration: durationSec,
+      isPlaying,
+      platform: pInfo.label,
+      platformFull: pInfo.name,
+      sourceAppId: activeSession.source_app_id,
+      url: songUrl
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function pollMediaSources() {
+  let ytmTrack = null;
+  let smtcTrack = null;
+
+  if (config.sourcePriority !== "smtc") {
+    ytmTrack = await fetchYouTubeMusicApi();
+  }
+  if (config.sourcePriority !== "ytm") {
+    smtcTrack = await fetchSmtcBridgeApi();
+  }
+
+  // Pick the active track intelligently
+  let chosen = null;
+  if (ytmTrack && ytmTrack.isPlaying) {
+    chosen = ytmTrack;
+  } else if (smtcTrack && smtcTrack.isPlaying) {
+    chosen = smtcTrack;
+  } else if (ytmTrack && isPlayerVisible && currentTrack.platform === "YTM") {
+    chosen = ytmTrack;
+  } else if (smtcTrack && isPlayerVisible) {
+    chosen = smtcTrack;
+  }
+
+  handleIncomingTrack(chosen);
+}
+
+function formatSeconds(sec) {
+  if (!sec || sec < 0 || !isFinite(sec)) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+function handleIncomingTrack(track) {
+  const now = Date.now();
+  const hideTimeoutMs = (Number(config.hideDelaySec) || 10) * 1000;
+
+  if (track && track.isPlaying) {
+    lastPlayingTimestamp = now;
+
+    // Show player if currently hidden
+    if (!isPlayerVisible) {
+      playStageVisibility(true);
+    }
+
+    // Check if the song changed
+    const isNewSong = track.id !== currentTrack.id;
+    currentTrack = { ...track };
+
+    // Update DOM elements
+    document.getElementById("song-title").textContent = track.title;
+    document.getElementById("song-artist").textContent = track.artist;
+    document.getElementById("platform-badge").textContent = track.platform;
+    document.getElementById("status-label").textContent = "NOW PLAYING";
+
+    if (track.art) {
+      document.getElementById("album-art").src = track.art;
+      document.getElementById("bg-art-blur").style.backgroundImage = `url("${track.art}")`;
+    }
+
+    if (track.duration > 0) {
+      const pct = Math.min(100, Math.max(0, (track.elapsed / track.duration) * 100));
+      document.getElementById("progress-fill").style.width = `${pct}%`;
+      document.getElementById("time-elapsed").textContent = formatSeconds(track.elapsed);
+      document.getElementById("time-total").textContent = formatSeconds(track.duration);
+    } else {
+      document.getElementById("progress-fill").style.width = "100%";
+      document.getElementById("time-elapsed").textContent = "LIVE";
+      document.getElementById("time-total").textContent = track.platform;
+    }
+
+    // Trigger 10-second Splash Takeover & Streamer.bot announcement on song change
+    if (isNewSong) {
+      triggerSplashTakeover(track);
+      notifyStreamerBotNewTrack(track);
+    }
+  } else {
+    // No music actively playing: check 10-second inactivity timer
+    if (isPlayerVisible) {
+      document.getElementById("status-label").textContent = "PAUSED";
+      if (lastPlayingTimestamp > 0 && (now - lastPlayingTimestamp) >= hideTimeoutMs) {
+        playStageVisibility(false);
+      }
+    }
+  }
+}
+
+/* ============================================================================
+   5. OPTIONAL STREAMER.BOT WEBSOCKET PUSH TRIGGER
+   ============================================================================ */
+let sbSocket = null;
+function notifyStreamerBotNewTrack(track) {
+  if (!config.enableStreamerBotTrigger) return;
+  try {
+    if (!sbSocket || sbSocket.readyState !== WebSocket.OPEN) {
+      sbSocket = new WebSocket(config.streamerBotWsUrl || "ws://127.0.0.1:8080/");
+      sbSocket.onopen = () => sendStreamerBotDoAction(track);
+    } else {
+      sendStreamerBotDoAction(track);
+    }
+  } catch (e) {}
+}
+
+function sendStreamerBotDoAction(track) {
+  if (!sbSocket || sbSocket.readyState !== WebSocket.OPEN) return;
+  const payload = {
+    request: "DoAction",
+    id: `track-${Date.now()}`,
+    action: { name: config.streamerBotActionName || "AnnounceTrackChange" },
+    args: {
+      songTitle: track.title,
+      songArtist: track.artist,
+      songPlatform: track.platformFull || track.platform,
+      songUrl: track.url
+    }
+  };
+  sbSocket.send(JSON.stringify(payload));
+}
+
+// Initialize Overlay
+loadConfig();
+setInterval(pollMediaSources, config.pollIntervalMs || 1000);
+pollMediaSources();
+</script>
+</body>
+</html>
